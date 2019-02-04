@@ -1,5 +1,3 @@
-__precompile__()
-
 module RegisterDriver
 
 using Images, JLD, HDF5, StaticArrays, Formatting
@@ -183,11 +181,11 @@ function initialize_jld!(dsets, file, mon, fs, n)
     have_unpackable
 end
 
-function nicehdf5{T<:StaticArray}(v::Union{Array{T},SharedArray{T}})
+function nicehdf5(v::Union{Array{T},SharedArray{T}}) where T<:StaticArray
     nicehdf5(reinterpret(eltype(T), sdata(v), (size(eltype(v))..., size(v)...)))
 end
 
-function nicehdf5{T<:NumDenom}(v::Union{Array{T},SharedArray{T}})
+function nicehdf5(v::Union{Array{T},SharedArray{T}}) where T<:NumDenom
     nicehdf5(reinterpret(eltype(T), sdata(v), (2, size(v)...)))
 end
 
@@ -220,7 +218,7 @@ Gaussian filters of width `sigmalp` (for the low-pass) and `sigmahp`
 (for the high-pass).  You can pass `sigmalp=zeros(n)` to skip low-pass
 filtering, and `sigmahp=fill(Inf, n)` to skip high-pass filtering.
 """
-type PreprocessSNF  # Shot-noise filtered
+mutable struct PreprocessSNF  # Shot-noise filtered
     bias::Float32
     sigmalp::Vector{Float32}
     sigmahp::Vector{Float32}
@@ -229,7 +227,7 @@ end
 
 function preprocess(pp::PreprocessSNF, A::AbstractArray)
     Af = sqrt_subtract_bias(A, pp.bias)
-    imfilter(highpass(Af, pp.sigmahp), KernelFactors.IIRGaussian((pp.sigmalp...)), NA())
+    imfilter(highpass(Af, pp.sigmahp), KernelFactors.IIRGaussian((pp.sigmalp...,)), NA())
 end
 (pp::PreprocessSNF)(A::AbstractArray) = preprocess(pp, A)
 (pp::PreprocessSNF)(A::ImageMeta) = shareproperties(A, pp(data(A)))

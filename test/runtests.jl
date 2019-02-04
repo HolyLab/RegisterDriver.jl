@@ -1,22 +1,21 @@
 driverprocs = addprocs(2)
 
 # Work around julia #3674
-using Images, JLD, Base.Test
+using Images, JLD, Test
 using BlockRegistration, BlockRegistrationScheduler
 using RegisterDriver, RegisterWorkerShell
 @sync for p in driverprocs
     @spawnat p eval(quote
-        using Images, JLD, Base.Test
+        using Images, JLD, Test
         using BlockRegistrationScheduler, RegisterDriver, RegisterWorkerShell
     end)
 end
 
-push!(LOAD_PATH, splitdir(@__FILE__)[1])
-using WorkerDummy
+include("WorkerDummy.jl")
+using .WorkerDummy
 for p in driverprocs
-    remotecall_fetch(eval, p, :(using WorkerDummy))  # workaround #3674 if this is re-run
+    remotecall_fetch(eval, p, :(include("WorkerDummy.jl"); using .WorkerDummy))  # workaround #3674 if this is re-run
 end
-pop!(LOAD_PATH)
 
 workdir = tempname()
 mkdir(workdir)
@@ -40,7 +39,7 @@ fn = joinpath(workdir, "file2.jld")
 driver(fn, alg, img, mon)
 tform = JLD.load(fn, "tform")
 u0    = JLD.load(fn, "u0")
-@test tform[:,4] == collect(linspace(1,12,12)+4)
+@test tform[:,4] == collect(range(1, stop=12, length=12)+4)
 @test u0[:,:,2] == fill(-2,(3,3))
 rm(fn)
 
