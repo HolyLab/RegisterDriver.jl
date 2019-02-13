@@ -1,21 +1,18 @@
-driverprocs = addprocs(2)
-
-# Work around julia #3674
-using Images, JLD, Test
-using BlockRegistration, BlockRegistrationScheduler
+using Test, Distributed, SharedArrays
+using Images, JLD
 using RegisterDriver, RegisterWorkerShell
+
+driverprocs = addprocs(2)
+include("WorkerDummy.jl")
 @sync for p in driverprocs
     @spawnat p eval(quote
-        using Images, JLD, Test
-        using BlockRegistrationScheduler, RegisterDriver, RegisterWorkerShell
+        using Pkg
+        Pkg.activate(".")
+        Pkg.instantiate()
+        include("WorkerDummy.jl")
     end)
 end
-
-include("WorkerDummy.jl")
 using .WorkerDummy
-for p in driverprocs
-    remotecall_fetch(eval, p, :(include("WorkerDummy.jl"); using .WorkerDummy))  # workaround #3674 if this is re-run
-end
 
 workdir = tempname()
 mkdir(workdir)
@@ -39,7 +36,7 @@ fn = joinpath(workdir, "file2.jld")
 driver(fn, alg, img, mon)
 tform = JLD.load(fn, "tform")
 u0    = JLD.load(fn, "u0")
-@test tform[:,4] == collect(range(1, stop=12, length=12)+4)
+@test tform[:,4] == collect(range(1, stop=12, length=12).+4)
 @test u0[:,:,2] == fill(-2,(3,3))
 rm(fn)
 
@@ -59,8 +56,8 @@ rm(fn)
 
 # Multi-process
 nw = length(driverprocs)
-alg = Vector{Any}(nw)
-mon = Vector{Any}(nw)
+alg = Vector{Any}(undef, nw)
+mon = Vector{Any}(undef, nw)
 for i = 1:nw
     alg[i] = Alg2(rand(100,100), Float32, (3,3), pid=driverprocs[i])
     mon[i] = monitor(alg[i], (:tform,:u0,:workerpid))

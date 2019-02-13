@@ -1,10 +1,10 @@
 module RegisterDriver
 
-using Images, JLD, HDF5, StaticArrays, Formatting
+using Images, JLD, HDF5, StaticArrays, Formatting, SharedArrays, Distributed
 using RegisterCore
 using RegisterWorkerShell
 
-export driver
+export driver, mm_package_loader
 export PreprocessSNF
 
 """
@@ -43,7 +43,7 @@ function driver(outfile::AbstractString, algorithm::Vector, img, mon::Vector)
     nworkers = length(algorithm)
     length(mon) == nworkers || error("Number of monitors must equal number of workers")
     use_workerprocs = nworkers > 1 || workerpid(algorithm[1]) != myid()
-    rralgorithm = Array{RemoteChannel}(nworkers)
+    rralgorithm = Array{RemoteChannel}(undef, nworkers)
     if use_workerprocs
         # Push the algorithm objects to the worker processes. This elminates
         # per-iteration serialization penalties, and ensures that any
@@ -155,7 +155,7 @@ function initialize_jld!(dsets, file, mon, fs, n)
     for (k,v) in mon
         kstr = string(k)
         if isa(v, Number)
-            write(file, kstr, Vector{typeof(v)}(n))
+            write(file, kstr, Vector{typeof(v)}(undef, n))
             dsets[k] = file[kstr]
         elseif isa(v, Array) || isa(v, SharedArray)
             v = nicehdf5(v)
@@ -163,7 +163,7 @@ function initialize_jld!(dsets, file, mon, fs, n)
                 fullsz = (size(v)..., n)
                 dsets[k] = d_create(file.plain, kstr, datatype(eltype(v)), dataspace(fullsz))
             else
-                write(file, kstr, Array{eltype(v)}(size(v)..., n))  # might fail if it's too big, but we tried
+                write(file, kstr, Array{eltype(v)}(undef, size(v)..., n))  # might fail if it's too big, but we tried
             end
             dsets[k] = file[kstr]
         elseif isa(v, ArrayDecl)  # maybe this never happens?
@@ -182,11 +182,11 @@ function initialize_jld!(dsets, file, mon, fs, n)
 end
 
 function nicehdf5(v::Union{Array{T},SharedArray{T}}) where T<:StaticArray
-    nicehdf5(reinterpret(eltype(T), sdata(v), (size(eltype(v))..., size(v)...)))
+    nicehdf5(reshape(reinterpret(eltype(T), vec(sdata(v))), (size(eltype(v))..., size(v)...)))
 end
 
 function nicehdf5(v::Union{Array{T},SharedArray{T}}) where T<:NumDenom
-    nicehdf5(reinterpret(eltype(T), sdata(v), (2, size(v)...)))
+    nicehdf5(reshape(reinterpret(eltype(T), vec(sdata(v))), (2, size(v)...)))
 end
 
 nicehdf5(v::SharedArray) = sdata(v)
@@ -241,11 +241,31 @@ end
 function sqrt_subtract_bias(A, bias)
 #    T = typeof(sqrt(one(promote_type(eltype(A), typeof(bias)))))
     T = Float32
-    out = Array{T}(size(A))
+    out = Array{T}(undef, size(A))
     for I in eachindex(A)
         @inbounds out[I] = sqrt(max(zero(T), convert(T, A[I]) - bias))
     end
     out
+end
+
+mm_package_loader(algorithm::AbstractWorker) = mm_package_loader([algorithm])
+function mm_package_loader(algorithms::Vector)
+    nworkers = length(algorithms)
+    use_workerprocs = nworkers > 1 || workerpid(algorithms[1]) != myid()
+    rrdev = Array{RemoteChannel}(undef, nworkers)
+    if use_workerprocs
+        for i = 1:nworkers
+            dev = algorithms[i].dev
+            rrdev[i] = put!(RemoteChannel(workerpid(algorithms[i])), dev)
+        end
+        @sync for i = 1:nworkers
+            p = workerpid(algorithms[i])
+            @async remotecall_fetch(load_mm_package, p, rrdev[i])
+        end
+    else
+        load_mm_package(algorithms[1].dev)
+    end
+    nothing
 end
 
 end # module

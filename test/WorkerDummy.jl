@@ -1,7 +1,7 @@
 ### Dummy algorithms to test features of `driver`
 module WorkerDummy
 
-using RegisterWorkerShell
+using RegisterWorkerShell, Distributed
 import RegisterWorkerShell: worker
 using Compat
 
@@ -47,10 +47,10 @@ end
 
 function worker(algorithm::Alg2, moving, tindex, mon)
     # Do stuff to set tform
-    tform = range(1, stop=12, length=12)+tindex
+    tform = range(1, stop=12, length=12).+tindex
     monitor!(mon, :tform, tform)
     # Do more computations...
-    monitor!(mon, :u0, zeros(size(algorithm.u0))-tindex)
+    monitor!(mon, :u0, zeros(size(algorithm.u0)).-tindex)
 end
 
 function worker(algorithm::Alg3, moving, tindex, mon)
