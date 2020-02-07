@@ -3,7 +3,6 @@ module WorkerDummy
 
 using RegisterWorkerShell, Distributed
 import RegisterWorkerShell: worker
-using Compat
 
 export Alg1, Alg2, Alg3
 

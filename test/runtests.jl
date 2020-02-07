@@ -1,18 +1,14 @@
 using Test, Distributed, SharedArrays
-using Images, JLD
+using ImageCore, JLD
 using RegisterDriver, RegisterWorkerShell
+using AxisArrays: AxisArray
 
 driverprocs = addprocs(2)
-include("WorkerDummy.jl")
+push!(LOAD_PATH, pwd())
 @sync for p in driverprocs
-    @spawnat p eval(quote
-        using Pkg
-        Pkg.activate(".")
-        Pkg.instantiate()
-        include("WorkerDummy.jl")
-    end)
+    @spawnat p push!(LOAD_PATH, pwd())
 end
-using .WorkerDummy
+using WorkerDummy
 
 workdir = tempname()
 mkdir(workdir)

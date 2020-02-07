@@ -1,6 +1,6 @@
 module RegisterDriver
 
-using Images, JLD, HDF5, StaticArrays, Formatting, SharedArrays, Distributed
+using ImageCore, ImageMetadata, JLD, HDF5, StaticArrays, Formatting, SharedArrays, Distributed
 using RegisterCore
 using RegisterWorkerShell
 
