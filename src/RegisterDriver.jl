@@ -5,7 +5,6 @@ using RegisterCore
 using RegisterWorkerShell
 
 export driver, mm_package_loader
-export PreprocessSNF
 
 """
 `driver(outfile, algorithm, img, mon)` performs registration of the
@@ -199,53 +198,6 @@ function copy_all_but_shared!(dest, src)
         end
     end
     dest
-end
-
-"""
-`pp = PreprocessSNF(bias, sigmalp, sigmahp)` constructs an object that
-can be used to pre-process an image as `pp(img)`. The "SNF" part of
-the name means "shot-noise filtered," meaning that this preprocessor
-is specifically designed for situations in which you are dominated by
-shot noise (i.e., from photon-counting statistics).
-
-The processing is of the form
-```
-    imgout = bandpass(√max(0,img-bias))
-```
-i.e., the image is bias-subtracted, square-root transformed (to turn
-shot noise into constant variance), and then band-pass filtered using
-Gaussian filters of width `sigmalp` (for the low-pass) and `sigmahp`
-(for the high-pass).  You can pass `sigmalp=zeros(n)` to skip low-pass
-filtering, and `sigmahp=fill(Inf, n)` to skip high-pass filtering.
-"""
-mutable struct PreprocessSNF  # Shot-noise filtered
-    bias::Float32
-    sigmalp::Vector{Float32}
-    sigmahp::Vector{Float32}
-end
-# PreprocessSNF(bias::T, sigmalp, sigmahp) = PreprocessSNF{T}(bias, T[sigmalp...], T[sigmahp...])
-
-function preprocess(pp::PreprocessSNF, A::AbstractArray)
-    Af = sqrt_subtract_bias(A, pp.bias)
-    imfilter(highpass(Af, pp.sigmahp), KernelFactors.IIRGaussian((pp.sigmalp...,)), NA())
-end
-(pp::PreprocessSNF)(A::AbstractArray) = preprocess(pp, A)
-(pp::PreprocessSNF)(A::ImageMeta) = shareproperties(A, pp(data(A)))
-# For SubArrays, extend to the parent along any non-sliced
-# dimension. That way, we keep any information from padding.
-function (pp::PreprocessSNF)(A::SubArray)
-    Bpad = preprocess(pp, paddedview(A))
-    trimmedview(Bpad, A)
-end
-
-function sqrt_subtract_bias(A, bias)
-#    T = typeof(sqrt(one(promote_type(eltype(A), typeof(bias)))))
-    T = Float32
-    out = Array{T}(undef, size(A))
-    for I in eachindex(A)
-        @inbounds out[I] = sqrt(max(zero(T), convert(T, A[I]) - bias))
-    end
-    out
 end
 
 mm_package_loader(algorithm::AbstractWorker) = mm_package_loader([algorithm])
