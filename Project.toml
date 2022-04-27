@@ -1,7 +1,7 @@
 name = "RegisterDriver"
 uuid = "935ac36e-2656-11e9-1e3b-cbaa636797af"
 authors = ["Tim Holy <tim.holy@gmail.com>"]
-version = "0.2.1"
+version = "0.2.2"
 
 [deps]
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
