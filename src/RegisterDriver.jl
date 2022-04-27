@@ -4,6 +4,18 @@ using ImageCore, ImageMetadata, JLD, HDF5, StaticArrays, Formatting, SharedArray
 using RegisterCore
 using RegisterWorkerShell
 
+if isdefined(HDF5, :BitsType)
+    const BitsType = HDF5.BitsType
+else
+    const BitsType = HDF5.HDF5BitsKind
+end
+if !isdefined(HDF5, :create_dataset)
+    const create_dataset = d_create
+end
+if !isdefined(HDF5, :create_group)
+    const create_group = g_create
+end
+
 export driver, mm_package_loader
 
 """
@@ -103,7 +115,7 @@ function driver(outfile::AbstractString, algorithm::Vector, img, mon::Vector)
                                         continue
                                     elseif isa(v, Array) || isa(v, SharedArray)
                                         vw = nicehdf5(v)
-                                        if eltype(vw) <: HDF5.HDF5BitsKind
+                                        if eltype(vw) <: BitsType
                                             colons = [Colon() for i = 1:ndims(vw)]
                                             dsets[k][colons..., idx] = vw
                                             continue
@@ -158,23 +170,23 @@ function initialize_jld!(dsets, file, mon, fs, n)
             dsets[k] = file[kstr]
         elseif isa(v, Array) || isa(v, SharedArray)
             v = nicehdf5(v)
-            if eltype(v) <: HDF5.HDF5BitsKind
+            if eltype(v) <: BitsType
                 fullsz = (size(v)..., n)
-                dsets[k] = d_create(file.plain, kstr, datatype(eltype(v)), dataspace(fullsz))
+                dsets[k] = create_dataset(file.plain, kstr, datatype(eltype(v)), dataspace(fullsz))
             else
                 write(file, kstr, Array{eltype(v)}(undef, size(v)..., n))  # might fail if it's too big, but we tried
             end
             dsets[k] = file[kstr]
         elseif isa(v, ArrayDecl)  # maybe this never happens?
             fullsz = (v.arraysize..., n)
-            dsets[k] = d_create(file.plain, kstr, datatype(eltype(v)), dataspace(fullsz))
+            dsets[k] = create_dataset(file.plain, kstr, datatype(eltype(v)), dataspace(fullsz))
         else
             have_unpackable = true
         end
     end
     if have_unpackable
         for i = 1:n
-            g_create(file, string("stack", fmt(fs, i)))
+            create_group(file, string("stack", fmt(fs, i)))
         end
     end
     have_unpackable
