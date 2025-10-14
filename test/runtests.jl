@@ -1,6 +1,6 @@
 using Test, Distributed, SharedArrays
 using ImageCore, JLD
-using RegisterDriver, RegisterWorkerShell
+using RegisterWorkerShell
 using AxisArrays: AxisArray
 
 driverprocs = addprocs(2)
@@ -8,6 +8,7 @@ push!(LOAD_PATH, pwd())
 @sync for p in driverprocs
     @spawnat p push!(LOAD_PATH, pwd())
 end
+@everywhere using RegisterDriver
 using WorkerDummy
 
 workdir = tempname()
