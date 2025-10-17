@@ -149,6 +149,85 @@ function driver(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
     return nothing
 end
 
+function driver_threads(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
+    n_alg = length(algorithms)
+    length(mon) == n_alg || error("Number of monitors must equal number of algorithms")
+    n = nimages(img)
+    fs = FormatSpec("0$(ndigits(n))d")
+
+    println("Initializing algorithms")
+    for alg in algorithms
+        init!(alg)
+    end
+
+    println("Working on algorithm and saving the result")
+    jldopen(outfile, "w") do file
+        # 데이터셋 초기화
+        dsets = Dict{Symbol,Any}()
+        firstsave = Ref(true)
+        have_unpackable = Ref(false)
+
+        # Channel for passing results from threads to writer
+        results_ch = Channel{Tuple{Int,Dict}}(32)
+
+        # Writer task (runs on main thread)
+        writer_task = @async begin
+            while true
+                data = try
+                    take!(results_ch)
+                catch
+                    break
+                end
+                movidx, monres = data
+
+                # Initialize datasets on first save
+                if firstsave[]
+                    firstsave[] = false
+                    have_unpackable[] = initialize_jld!(dsets, file, monres, fs, n)
+                end
+
+                g = have_unpackable[] ? file[string("stack", fmt(fs, movidx))] : nothing
+
+                # Write all values into the file
+                for (k,v) in monres
+                    if isa(v, Number)
+                        dsets[k][movidx] = v
+                    elseif isa(v, Array) || isa(v, SharedArray)
+                        vw = nicehdf5(v)
+                        if eltype(vw) <: BitsType
+                            colons = [Colon() for _=1:ndims(vw)]
+                            dsets[k][colons..., movidx] = vw
+                        else
+                            g[string(k)] = v
+                        end
+                    else
+                        g[string(k)] = v
+                    end
+                end
+            end
+        end
+
+        # Main computation with Threads.@threads
+        @threads for movidx in 1:n
+            tid = threadid()
+            alg_idx = (tid - 1) % n_alg + 1  # 스레드별 알고리즘 선택
+            tmp = worker(algorithms[alg_idx], img, movidx, mon[alg_idx])
+            put!(results_ch, (movidx, tmp))
+        end
+
+        # Close channel and wait for writer to finish
+        close(results_ch)
+        wait(writer_task)
+    end
+
+    println("Closing algorithms")
+    for alg in algorithms
+        close!(alg)
+    end
+
+    return nothing
+end
+
 driver(outfile::AbstractString, algorithm::AbstractWorker, img, mon::Dict) = driver(outfile, [algorithm], img, [mon])
 
 """
