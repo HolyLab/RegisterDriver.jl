@@ -2,12 +2,9 @@ using Test, Distributed, SharedArrays
 using ImageCore, JLD
 using RegisterDriver, RegisterWorkerShell
 using AxisArrays: AxisArray
+using Base.Threads
 
-driverprocs = addprocs(2)
 push!(LOAD_PATH, pwd())
-@sync for p in driverprocs
-    @spawnat p push!(LOAD_PATH, pwd())
-end
 using WorkerDummy
 
 workdir = tempname()
@@ -15,7 +12,7 @@ mkdir(workdir)
 
 img = AxisArray(SharedArray{Float32}((100,100,7)), :y, :x, :time)
 
-# Single-process tests
+# Single-process tests : mon::Dict
 # Simple operation & passing back scalars
 alg = Alg1(rand(3,3), 3.2)
 mon = monitor(alg, (:λ,))
@@ -40,6 +37,7 @@ rm(fn)
 # one per stack.
 alg = Alg3("Hello")
 mon = monitor(alg, (:string,))
+@show typeof(mon)
 mon[:extra] = ""
 fn = joinpath(workdir, "file3.jld")
 driver(fn, alg, img, mon)
@@ -50,18 +48,22 @@ jldopen(fn) do file
 end
 rm(fn)
 
-# Multi-process
-nw = length(driverprocs)
-alg = Vector{Any}(undef, nw)
-mon = Vector{Any}(undef, nw)
-for i = 1:nw
-    alg[i] = Alg2(rand(100,100), Float32, (3,3), pid=driverprocs[i])
-    mon[i] = monitor(alg[i], (:tform,:u0,:workerpid))
+# Multi-thread : mon::Vector{Dict}
+tids = threadids()
+nt = length(tids)
+alg = Vector{Any}(undef, nt)
+mon = Vector{Any}(undef, nt)
+for i = 1:nt
+    alg[i] = Alg2(rand(100,100), Float32, (3,3), tid=tids[i])
+    mon[i] = monitor(alg[i], (:tform,:u0,:workertid))
 end
 fn = joinpath(workdir, "file4.jld")
 driver(fn, alg, img, mon)
-wpid = JLD.load(fn, "workerpid")
-indx = unique(indexin(wpid, driverprocs))
-@test length(indx) == length(driverprocs) && all(indx .> 0)
-
-rmprocs(driverprocs, waitfor=1.0)
+tform = JLD.load(fn, "tform")
+u0    = JLD.load(fn, "u0")
+@test tform[:,4] == collect(range(1, stop=12, length=12).+4)
+@test u0[:,:,2] == fill(-2,(3,3))
+tid = JLD.load(fn, "workertid")
+indx = unique(indexin(tid, tids))
+@test length(indx) == length(tids) && all(indx .> 0)
+rm(fn)
