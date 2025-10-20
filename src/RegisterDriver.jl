@@ -1,8 +1,8 @@
 module RegisterDriver
 
 using ImageCore, ImageMetadata, JLD, HDF5, StaticArrays, Formatting, SharedArrays, Distributed
-using RegisterCore
-using RegisterWorkerShell
+using RegisterCore, RegisterWorkerShell
+using Base.Threads
 
 if isdefined(HDF5, :BitsType)
     const BitsType = HDF5.BitsType
@@ -16,7 +16,7 @@ if !isdefined(HDF5, :create_group)
     const create_group = g_create
 end
 
-export driver, mm_package_loader
+export driver, mm_package_loader, threadids
 
 """
 `driver(outfile, algorithm, img, mon)` performs registration of the
@@ -50,98 +50,91 @@ worker has been written to look for such settings:
 
 which will save `extra` only if `:extra` is a key in `mon`.
 """
-function driver(outfile::AbstractString, algorithm::Vector, img, mon::Vector)
-    nworkers = length(algorithm)
-    length(mon) == nworkers || error("Number of monitors must equal number of workers")
-    use_workerprocs = nworkers > 1 || workerpid(algorithm[1]) != myid()
-    rralgorithm = Array{RemoteChannel}(undef, nworkers)
-    if use_workerprocs
-        # Push the algorithm objects to the worker processes. This elminates
-        # per-iteration serialization penalties, and ensures that any
-        # initalization state is retained.
-        for i = 1:nworkers
-            alg = algorithm[i]
-            rralgorithm[i] = put!(RemoteChannel(workerpid(alg)), alg)
-        end
-        # Perform any needed worker initialization
-        @sync for i = 1:nworkers
-            p = workerpid(algorithm[i])
-            @async remotecall_fetch(init!, p, rralgorithm[i])
-        end
-    else
-        init!(algorithm[1])
-    end
-    try
-        n = nimages(img)
-        fs = FormatSpec("0$(ndigits(n))d")  # group names of unpackable objects
-        jldopen(outfile, "w") do file
-            dsets = Dict{Symbol,Any}()
-            firstsave = SharedArray{Bool}(1)
-            firstsave[1] = true
-            have_unpackable = SharedArray{Bool}(1)
-            have_unpackable[1] = false
-            # Run the jobs
-            nextidx = 0
-            getnextidx() = nextidx += 1
-            writing_mutex = RemoteChannel()
-            @sync begin
-                for i = 1:nworkers
-                    alg = algorithm[i]
-                    @async begin
-                        while (idx = getnextidx()) <= n
-                            if use_workerprocs
-                                remotecall_fetch(println, workerpid(alg), "Worker ", workerpid(alg), " is working on ", idx)
-                                # See https://github.com/JuliaLang/julia/issues/22139
-                                tmp = remotecall_fetch(worker, workerpid(alg), rralgorithm[i], img, idx, mon[i])
-                                copy_all_but_shared!(mon[i], tmp)
-                            else
-                                println("Working on ", idx)
-                                mon[1] = worker(algorithm[1], img, idx, mon[1])
-                            end
-                            # Save the results
-                            put!(writing_mutex, true)  # grab the lock
-                            try
-                                local g
-                                if firstsave[]
-                                    firstsave[] = false
-                                    have_unpackable[] = initialize_jld!(dsets, file, mon[i], fs, n)
-                                end
-                                if fetch(have_unpackable[])
-                                    g = file[string("stack", fmt(fs, idx))]
-                                end
-                                for (k,v) in mon[i]
-                                    if isa(v, Number)
-                                        dsets[k][idx] = v
-                                        continue
-                                    elseif isa(v, Array) || isa(v, SharedArray)
-                                        vw = nicehdf5(v)
-                                        if eltype(vw) <: BitsType
-                                            colons = [Colon() for i = 1:ndims(vw)]
-                                            dsets[k][colons..., idx] = vw
-                                            continue
-                                        end
-                                    end
-                                    g[string(k)] = v
-                                end
-                            finally
-                                take!(writing_mutex)   # release the lock
-                            end
+function driver(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
+    nalgs = length(algorithms)
+    nummon = length(mon)
+    nummon == nalgs || error("Number of monitors must equal number of workers")
+    usethreads = nummon > 2
+    numthreads = nthreads()
+    (usethreads && (nummon != numthreads)) &&
+        error("Number of monitors must equal number of threads when using multi-threads")
+
+    aindices = usethreads ? Dict(map((alg,aidx)->(alg.workertid=>aidx), algorithms, 1:length(algorithms))...) :
+                            Dict(threadid()=>1)
+    n = nimages(img)
+    fs = FormatSpec("0$(ndigits(n))d")
+
+    println("Initializing algorithm")
+    init!(algorithms[1])
+
+    println("Working on algorithm and saving the result")
+    jldopen(outfile, "w") do file
+        dsets = Dict{Symbol,Any}()
+        firstsave = Ref(true)
+        have_unpackable = Ref(false)
+
+        # Channel for passing results from threads to writer
+        results_ch = Channel{Tuple{Int,Dict}}(32)
+
+        # Writer task (runs on main thread)
+        writer_task = @async begin
+            for (movidx, monres) in results_ch
+
+                # Initialize datasets on first save
+                if firstsave[]
+                    firstsave[] = false
+                    have_unpackable[] = initialize_jld!(dsets, file, monres, fs, n)
+                end
+
+                g = have_unpackable[] ? file[string("stack", fmt(fs, movidx))] : nothing
+
+                # Write all values into the file
+                for (k,v) in monres
+                    if isa(v, Number)
+                        dsets[k][movidx] = v
+                    elseif isa(v, Array) || isa(v, SharedArray)
+                        vw = nicehdf5(v)
+                        if eltype(vw) <: BitsType
+                            colons = [Colon() for _=1:ndims(vw)]
+                            dsets[k][colons..., movidx] = vw
+                        else
+                            g[string(k)] = v
                         end
+                    else
+                        g[string(k)] = v
                     end
                 end
+                yield()
             end
         end
-    finally
-        # Perform any needed worker cleanup
-        if use_workerprocs
-            @sync for i = 1:nworkers
-                p = workerpid(algorithm[i])
-                @async remotecall_fetch(close!, p, rralgorithm[i])
+
+        if usethreads
+            # writer_task shares the first thread, making static scheduling inefficient
+            @threads :dynamic for movidx in 1:n
+                tid = threadid()
+                println("thread $tid processing $movidx")
+                tmp = worker(algorithms[aindices[tid]], img, movidx, mon[aindices[tid]])
+                put!(results_ch, (movidx, deepcopy(tmp)))
+                yield()
             end
         else
-            close!(algorithm[1])
+            for movidx in 1:n
+                println("processing $movidx")
+                tmp = worker(algorithms[1], img, movidx, mon[1])
+                put!(results_ch, (movidx, tmp))
+                yield()
+            end
         end
+
+        # Close channel and wait for writer to finish
+        close(results_ch)
+        wait(writer_task)
     end
+
+    println("Closing algorithm")
+    close!(algorithms[1])
+
+    return nothing
 end
 
 driver(outfile::AbstractString, algorithm::AbstractWorker, img, mon::Dict) = driver(outfile, [algorithm], img, [mon])
@@ -212,24 +205,18 @@ function copy_all_but_shared!(dest, src)
     dest
 end
 
-mm_package_loader(algorithm::AbstractWorker) = mm_package_loader([algorithm])
-function mm_package_loader(algorithms::Vector)
-    nworkers = length(algorithms)
-    use_workerprocs = nworkers > 1 || workerpid(algorithms[1]) != myid()
-    rrdev = Array{RemoteChannel}(undef, nworkers)
-    if use_workerprocs
-        for i = 1:nworkers
-            dev = algorithms[i].dev
-            rrdev[i] = put!(RemoteChannel(workerpid(algorithms[i])), dev)
-        end
-        @sync for i = 1:nworkers
-            p = workerpid(algorithms[i])
-            @async remotecall_fetch(load_mm_package, p, rrdev[i])
-        end
-    else
-        load_mm_package(algorithms[1].dev)
-    end
+mm_package_loader(algorithms::Vector{W}) where {W<:AbstractWorker} = mm_package_loader(algorithms[1])
+function mm_package_loader(algorithm::AbstractWorker)
+    load_mm_package(algorithm.dev)
     nothing
 end
 
+function threadids()
+    nt = nthreads()
+    threadids = Vector{Int}(undef, nt)
+    @threads for i in 1:nt
+        threadids[i] = threadid()
+    end
+    sort!(threadids)
+end
 end # module

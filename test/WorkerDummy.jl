@@ -14,28 +14,28 @@ abstract type Alg <: AbstractWorker end
 mutable struct Alg1{A<:AbstractArray} <: Alg
     fixed::A
     λ::Float64
-    workerpid::Int
+    workertid::Int
 end
-function Alg1(fixed, λ; pid=1)
-    Alg1(maybe_sharedarray(fixed, pid), λ, pid)
+function Alg1(fixed, λ; tid=1)
+    Alg1(fixed, λ, tid)
 end
 
 mutable struct Alg2{A<:AbstractArray,V<:AbstractVector,M<:AbstractMatrix} <: Alg
     fixed::A
     tform::V
     u0::M
-    workerpid::Int
+    workertid::Int
 end
-function Alg2(fixed, ::Type{T}, sz; pid=1) where T
-    Alg2(maybe_sharedarray(fixed, pid), maybe_sharedarray(T, (12,), pid), maybe_sharedarray(T, sz, pid), pid)
+function Alg2(fixed, ::Type{T}, sz; tid=1) where T
+    Alg2(fixed, Vector{T}(undef,12), Matrix{T}(undef, sz), tid)
 end
 
 mutable struct Alg3 <: Alg
     string::String
-    workerpid::Int
+    workertid::Int
 end
-function Alg3(s::String; pid=1)
-    Alg3(s, pid)
+function Alg3(s::String; tid=1)
+    Alg3(s, tid)
 end
 
 # Here are the "registration algorithms"
