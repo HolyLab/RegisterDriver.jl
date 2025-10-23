@@ -56,9 +56,7 @@ function driver(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
     nummon == nalgs || error("Number of monitors must equal number of workers")
     usethreads = nummon > 2
     numthreads = nthreads()
-    (usethreads && (nummon != numthreads)) &&
-        error("Number of monitors must equal number of threads when using multi-threads")
-
+    tpool = map(alg->alg.workertid, algorithms)
     aindices = usethreads ? Dict(map((alg,aidx)->(alg.workertid=>aidx), algorithms, 1:length(algorithms))...) :
                             Dict(threadid()=>1)
     n = nimages(img)
@@ -112,9 +110,11 @@ function driver(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
             # writer_task shares the first thread, making static scheduling inefficient
             @threads :dynamic for movidx in 1:n
                 tid = threadid()
-                println("thread $tid processing $movidx")
-                tmp = worker(algorithms[aindices[tid]], img, movidx, mon[aindices[tid]])
-                put!(results_ch, (movidx, deepcopy(tmp)))
+                if tid in tpool
+                    println("thread $tid processing $movidx")
+                    tmp = worker(algorithms[aindices[tid]], img, movidx, mon[aindices[tid]])
+                    put!(results_ch, (movidx, deepcopy(tmp)))
+                end
                 yield()
             end
         else
@@ -213,10 +213,17 @@ end
 
 function threadids()
     nt = nthreads()
-    threadids = Vector{Int}(undef, nt)
+    ch = Channel{Int}(nt*1001)
+
     @threads for i in 1:nt
-        threadids[i] = threadid()
+        put!(ch, threadid())
     end
-    sort!(threadids)
+    @sync for i in 1:(nt*1000)
+        Threads.@spawn put!(ch, threadid())
+    end
+
+    close(ch)
+    tids = unique(collect(ch))
+    sort(tids)
 end
 end # module
