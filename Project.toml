@@ -19,6 +19,7 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Aqua = "0.8"
 AxisArrays = "0.4"
 Distributed = "1"
+Documenter = "1"
 ExplicitImports = "1"
 Formatting = "0.4"
 HDF5 = "0.12, 0.13, 0.14, 0.15, 0.16, 0.17"
@@ -35,8 +36,9 @@ julia = "1.10"
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 AxisArrays = "39de3d68-74b9-583c-8d2d-e117c070f3a9"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Aqua", "AxisArrays", "ExplicitImports", "Test"]
+test = ["Aqua", "AxisArrays", "Documenter", "ExplicitImports", "Test"]

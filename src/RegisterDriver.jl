@@ -1,3 +1,12 @@
+"""
+    RegisterDriver
+
+Drive image registration workflows: run `AbstractWorker` algorithms over
+single- or multi-threaded execution and save results to disk.
+
+Primary entry point: [`driver`](@ref). See also [`mm_package_loader`](@ref)
+and [`threadids`](@ref).
+"""
 module RegisterDriver
 
 using Distributed: Distributed
@@ -18,36 +27,39 @@ const BitsType = HDF5.BitsType
 export driver, mm_package_loader, threadids
 
 """
-`driver(outfile, algorithm, img, mon)` performs registration of the
-image(s) in `img` according to the algorithm selected by
-`algorithm`. `algorithm` is either a single instance, or for parallel
-computation a vector of instances, of `AbstractWorker` types.  See the
-`RegisterWorkerShell` module for more details.
+    driver(outfile, algorithm, img, mon)
+    driver(outfile, algorithms, img, mon)
 
-Results are saved in `outfile` according to the information in `mon`.
-`mon` is a `Dict`, or for parallel computation a vector of `Dicts` of
-the same length as `algorithm`.  The data saved correspond to the keys
-(always `Symbol`s) in `mon`, and the values are used for communication
-between the worker(s) and the driver.  The usual way to set up `mon`
-is like this:
+Register the image(s) in `img` and save results to `outfile` in JLD format.
 
-```
-    algorithm = RegisterRigid(fixed, params...)   # An AbstractWorker algorithm
-    mon = monitor(algorithm, (:tform,:mismatch))  # List of variables to record
-```
+`algorithm` is a single `AbstractWorker` instance; `algorithms` is a `Vector`
+of such instances for parallel (multi-threaded) computation. See the
+`RegisterWorkerShell` module for details on constructing workers.
 
-The list of symbols, taken from the field names of `RegisterRigid`,
-specifies the pieces of information to be communicated back to the
-driver process for saving and/or display to the user.  It's also
-possible to request local variables in the worker, as long as the
-worker has been written to look for such settings:
+`mon` is a `Dict` mapping `Symbol` keys to communication values, or for the
+parallel form a `Vector` of such `Dict`s (one per worker). The keys specify
+which computed quantities are communicated back from each worker. Set them up
+with the worker's `monitor` function:
 
-```
-    # <in the worker algorithm>
-    monitor_copy!(mon, :extra, extra)
+```julia
+algorithm = RegisterRigid(fixed, params...)     # construct an AbstractWorker
+mon = monitor(algorithm, (:tform, :mismatch))   # select fields to record
+driver("results.jld", algorithm, img, mon)      # register and save
 ```
 
-which will save `extra` only if `:extra` is a key in `mon`.
+Scalars are stored as plain vectors indexed by image number; bit-type arrays are
+stored as higher-dimensional HDF5 datasets; other values are stored per-image
+inside `"stack<n>"` groups.
+
+Additional local worker variables can be recorded by adding their keys to `mon`
+and calling `monitor_copy!` inside the worker:
+
+```julia
+# inside the worker algorithm:
+monitor_copy!(mon, :extra, extra)   # saved only if :extra is a key in mon
+```
+
+Returns `nothing`.
 """
 function driver(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
     nalgs = length(algorithms)
@@ -139,8 +151,22 @@ end
 driver(outfile::AbstractString, algorithm::AbstractWorker, img, mon::Dict) = driver(outfile, [algorithm], img, [mon])
 
 """
-`mon = driver(algorithm, img, mon)` performs registration on a single
-image, returning the results in `mon`.
+    driver(algorithm, img, mon) -> Dict
+
+Register the single image in `img` and return the populated result `Dict`.
+
+`img` must contain exactly one image; for multi-image stacks use the
+file-saving form of `driver`. The returned `Dict` is the same object as `mon`,
+with each key's value updated to the quantity computed by the worker.
+
+# Example
+
+```julia
+algorithm = RegisterRigid(fixed, params...)
+mon = monitor(algorithm, (:tform, :mismatch))
+mon = driver(algorithm, img, mon)
+tform = mon[:tform]
+```
 """
 function driver(algorithm::AbstractWorker, img, mon::Dict)
     nimages(img) == 1 || error("With multiple images, you must store results to a file")
@@ -196,12 +222,42 @@ nicehdf5(v::SharedArray) = sdata(v)
 nicehdf5(v) = v
 
 
+"""
+    mm_package_loader(algorithm::AbstractWorker)
+    mm_package_loader(algorithms::Vector{<:AbstractWorker})
+
+Load the mismatch-computation package appropriate for `algorithm`'s compute device.
+
+Thin wrapper around `RegisterWorkerShell.load_mm_package` that accepts either a
+single worker or a vector of workers (delegating to the first element). Call this
+before `driver` when the algorithm requires a device-specific backend (e.g., a
+CUDA mismatch package) to be loaded on the driver process.
+
+Returns `nothing`.
+"""
 mm_package_loader(algorithms::Vector{W}) where {W <: AbstractWorker} = mm_package_loader(algorithms[1])
 function mm_package_loader(algorithm::AbstractWorker)
     load_mm_package(algorithm.dev)
     return nothing
 end
 
+"""
+    threadids() -> Vector{Int}
+
+Return the sorted list of thread IDs that Julia's scheduler actually assigns to
+tasks spawned with `@threads` and `Threads.@spawn`.
+
+Julia's main thread (ID 1) typically does not execute worker tasks. The
+returned IDs are useful for configuring `AbstractWorker` instances that pin
+execution to a specific thread via the `workertid` field.
+
+# Example
+
+```julia
+# On a Julia session started with 4 threads
+threadids()    # e.g. [2, 3, 4, 5]
+```
+"""
 function threadids()
     nt = nthreads()
     ch = Channel{Int}(nt * 1001)
