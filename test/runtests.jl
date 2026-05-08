@@ -1,5 +1,6 @@
 using Test, Distributed, SharedArrays
 using Aqua
+using ExplicitImports
 using ImageCore, JLD
 using RegisterDriver, RegisterWorkerShell
 using AxisArrays: AxisArray
@@ -10,6 +11,11 @@ using WorkerDummy
 
 @testset "Aqua" begin
     Aqua.test_all(RegisterDriver)
+end
+
+@testset "ExplicitImports" begin
+    # BitsType is an intentional non-public HDF5 access: version-compat shim guarded by isdefined
+    ExplicitImports.test_explicit_imports(RegisterDriver; ignore=(:BitsType,))
 end
 
 @testset "RegisterDriver" begin
