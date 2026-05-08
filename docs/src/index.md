@@ -1,10 +1,8 @@
 # RegisterDriver.jl
 
-[![CI](https://github.com/HolyLab/RegisterDriver.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/HolyLab/RegisterDriver.jl/actions/workflows/CI.yml)
-[![codecov](https://codecov.io/gh/HolyLab/RegisterDriver.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/HolyLab/RegisterDriver.jl)
-[![docs-stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://holylab.github.io/RegisterDriver.jl/stable)
-[![docs-dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://holylab.github.io/RegisterDriver.jl/dev)
-[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+```@docs
+RegisterDriver
+```
 
 RegisterDriver.jl drives image registration workflows in the
 [BlockRegistration](https://github.com/HolyLab/BlockRegistration.jl) ecosystem.
@@ -40,10 +38,13 @@ algorithm = MyWorker(fixed, params...)         # construct an AbstractWorker
 mon = monitor(algorithm, (:tform, :mismatch))  # fields to record
 ```
 
+The `monitor` function is provided by
+[RegisterWorkerShell](https://github.com/HolyLab/RegisterWorkerShell.jl).
+
 ### The driver
 
-`driver` iterates the worker over every frame of an image stack. It handles
-initialisation, per-frame execution, and teardown, then either saves the
+[`driver`](@ref) iterates the worker over every frame of an image stack. It
+handles initialisation, per-frame execution, and teardown, then either saves the
 collected values to a JLD file or returns them in-memory for single-image use.
 
 ## Usage
@@ -77,9 +78,9 @@ monitors   = [monitor(algorithms[1], (:tform, :mismatch)) for _ in tids]
 driver("results.jld", algorithms, monitors)
 ```
 
-`threadids()` returns the sorted list of thread IDs that Julia actually
+[`threadids()`](@ref) returns the sorted list of thread IDs that Julia actually
 schedules `@threads` tasks on (typically excluding thread 1, which drives the
-writer).
+writer task).
 
 ### Loading a device-specific backend
 
