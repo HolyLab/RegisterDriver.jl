@@ -1,8 +1,17 @@
 module RegisterDriver
 
-using ImageCore, ImageMetadata, JLD, HDF5, StaticArrays, Formatting, SharedArrays, Distributed
-using RegisterCore, RegisterWorkerShell
-using Base.Threads
+using Distributed: Distributed
+using Formatting: Formatting, FormatSpec, fmt
+using HDF5: HDF5, dataspace, datatype
+using ImageCore: ImageCore, nimages
+using ImageMetadata: ImageMetadata
+using JLD: JLD, jldopen
+using RegisterCore: RegisterCore, NumDenom
+using RegisterWorkerShell: RegisterWorkerShell, AbstractWorker, ArrayDecl,
+                           close!, init!, load_mm_package, worker
+using SharedArrays: SharedArrays, SharedArray, sdata
+using StaticArrays: StaticArrays, StaticArray
+using Base.Threads: @threads, nthreads, threadid
 
 if isdefined(HDF5, :BitsType)
     const BitsType = HDF5.BitsType
