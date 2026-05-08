@@ -1,5 +1,6 @@
 using Test, Distributed, SharedArrays
 using Aqua
+using Documenter
 using ExplicitImports
 using ImageCore, JLD
 using RegisterDriver, RegisterWorkerShell
@@ -10,6 +11,11 @@ using Base.Threads
 
 push!(LOAD_PATH, pwd())
 using WorkerDummy
+
+@testset "Doctests" begin
+    DocMeta.setdocmeta!(RegisterDriver, :DocTestSetup, :(using RegisterDriver); recursive = true)
+    doctest(RegisterDriver; manual = false)
+end
 
 @testset "Aqua" begin
     Aqua.test_all(RegisterDriver)
