@@ -4,6 +4,8 @@ using ExplicitImports
 using ImageCore, JLD
 using RegisterDriver, RegisterWorkerShell
 using AxisArrays: AxisArray
+using RegisterCore: NumDenom
+using StaticArrays: SVector
 using Base.Threads
 
 push!(LOAD_PATH, pwd())
@@ -14,7 +16,7 @@ using WorkerDummy
 end
 
 @testset "ExplicitImports" begin
-    # BitsType is an intentional non-public HDF5 access: version-compat shim guarded by isdefined
+    # BitsType is intentionally accessed as HDF5.BitsType (non-public alias)
     ExplicitImports.test_explicit_imports(RegisterDriver; ignore=(:BitsType,))
 end
 
@@ -79,4 +81,45 @@ end
     indx = unique(indexin(tid, tids))
     @test length(indx) == length(tids) && all(indx .> 0)
     rm(fn)
+
+    # Non-BitsType array (ComplexF32) alongside an unpackable string: exercises
+    # the group-write path in the writer task (line 98) and initialize_jld! (line 169)
+    alg4 = Alg4()
+    mon4 = Dict{Symbol,Any}(:data => copy(alg4.data), :label => alg4.label)
+    fn = joinpath(workdir, "file5.jld")
+    driver(fn, alg4, img, mon4)
+    jldopen(fn, "r") do file
+        g2 = file["stack2"]
+        @test read(g2, "label") == "frame2"
+        @test read(g2, "data") == alg4.data .* 2
+    end
+    rm(fn)
+end
+
+@testset "In-memory single-image driver" begin
+    single_img = AxisArray(SharedArray{Float32}((100, 100, 1)), :y, :x, :time)
+    alg = Alg1(rand(3, 3), 3.2)
+    mon = monitor(alg, (:λ,))
+    result = driver(alg, single_img, mon)
+    @test result[:λ] == 1.0
+
+    multi_img = AxisArray(SharedArray{Float32}((100, 100, 3)), :y, :x, :time)
+    @test_throws "With multiple images" driver(alg, multi_img, mon)
+end
+
+@testset "nicehdf5 specializations" begin
+    # Plain SharedArray → sdata
+    sa = SharedArray{Float32}((3, 4))
+    sa .= 2.0f0
+    @test RegisterDriver.nicehdf5(sa) === sdata(sa)
+
+    # Array of StaticArrays → reinterpreted matrix
+    arr_sv = [SVector(1.0, 2.0), SVector(3.0, 4.0)]
+    result_sv = RegisterDriver.nicehdf5(arr_sv)
+    @test result_sv == [1.0 3.0; 2.0 4.0]
+
+    # Array of NumDenom → reinterpreted 2×n matrix
+    arr_nd = [NumDenom(1.0, 2.0), NumDenom(3.0, 4.0)]
+    result_nd = RegisterDriver.nicehdf5(arr_nd)
+    @test result_nd == [1.0 3.0; 2.0 4.0]
 end

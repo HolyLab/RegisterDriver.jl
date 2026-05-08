@@ -2,7 +2,7 @@ module RegisterDriver
 
 using Distributed: Distributed
 using Formatting: Formatting, FormatSpec, fmt
-using HDF5: HDF5, dataspace, datatype
+using HDF5: HDF5, create_dataset, create_group, dataspace, datatype
 using ImageCore: ImageCore, nimages
 using ImageMetadata: ImageMetadata
 using JLD: JLD, jldopen
@@ -13,17 +13,7 @@ using SharedArrays: SharedArrays, SharedArray, sdata
 using StaticArrays: StaticArrays, StaticArray
 using Base.Threads: @threads, nthreads, threadid
 
-if isdefined(HDF5, :BitsType)
-    const BitsType = HDF5.BitsType
-else
-    const BitsType = HDF5.HDF5BitsKind
-end
-if !isdefined(HDF5, :create_dataset)
-    const create_dataset = d_create
-end
-if !isdefined(HDF5, :create_group)
-    const create_group = g_create
-end
+const BitsType = HDF5.BitsType
 
 export driver, mm_package_loader, threadids
 
@@ -205,14 +195,6 @@ end
 nicehdf5(v::SharedArray) = sdata(v)
 nicehdf5(v) = v
 
-function copy_all_but_shared!(dest, src)
-    for (k, v) in src
-        if !isa(v, SharedArray)
-            dest[k] = v
-        end
-    end
-    return dest
-end
 
 mm_package_loader(algorithms::Vector{W}) where {W <: AbstractWorker} = mm_package_loader(algorithms[1])
 function mm_package_loader(algorithm::AbstractWorker)
