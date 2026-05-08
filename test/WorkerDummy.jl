@@ -11,45 +11,45 @@ export Alg1, Alg2, Alg3
 # with the driver process
 abstract type Alg <: AbstractWorker end
 
-mutable struct Alg1{A<:AbstractArray} <: Alg
+mutable struct Alg1{A <: AbstractArray} <: Alg
     fixed::A
     λ::Float64
     workertid::Int
 end
-function Alg1(fixed, λ; tid=1)
-    Alg1(fixed, λ, tid)
+function Alg1(fixed, λ; tid = 1)
+    return Alg1(fixed, λ, tid)
 end
 
-mutable struct Alg2{A<:AbstractArray,V<:AbstractVector,M<:AbstractMatrix} <: Alg
+mutable struct Alg2{A <: AbstractArray, V <: AbstractVector, M <: AbstractMatrix} <: Alg
     fixed::A
     tform::V
     u0::M
     workertid::Int
 end
-function Alg2(fixed, ::Type{T}, sz; tid=1) where T
-    Alg2(fixed, Vector{T}(undef,12), Matrix{T}(undef, sz), tid)
+function Alg2(fixed, ::Type{T}, sz; tid = 1) where {T}
+    return Alg2(fixed, Vector{T}(undef, 12), Matrix{T}(undef, sz), tid)
 end
 
 mutable struct Alg3 <: Alg
     string::String
     workertid::Int
 end
-function Alg3(s::String; tid=1)
-    Alg3(s, tid)
+function Alg3(s::String; tid = 1)
+    return Alg3(s, tid)
 end
 
 # Here are the "registration algorithms"
 function worker(algorithm::Alg1, moving, tindex, mon)
     algorithm.λ = tindex
-    monitor!(mon, algorithm)   # just dump output
+    return monitor!(mon, algorithm)   # just dump output
 end
 
 function worker(algorithm::Alg2, moving, tindex, mon)
     # Do stuff to set tform
-    tform = range(1, stop=12, length=12).+tindex
+    tform = range(1, stop = 12, length = 12) .+ tindex
     monitor!(mon, :tform, tform)
     # Do more computations...
-    monitor!(mon, :u0, zeros(size(algorithm.u0)).-tindex)
+    return monitor!(mon, :u0, zeros(size(algorithm.u0)) .- tindex)
 end
 
 function worker(algorithm::Alg3, moving, tindex, mon)
@@ -57,7 +57,7 @@ function worker(algorithm::Alg3, moving, tindex, mon)
     if haskey(mon, :extra)
         mon[:extra] = "world"
     end
-    mon
+    return mon
 end
 
 end  # module
