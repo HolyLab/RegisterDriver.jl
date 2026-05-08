@@ -56,9 +56,9 @@ function driver(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
     nummon == nalgs || error("Number of monitors must equal number of workers")
     usethreads = nummon > 2
     numthreads = nthreads()
-    tpool = map(alg->alg.workertid, algorithms)
-    aindices = usethreads ? Dict(map((alg,aidx)->(alg.workertid=>aidx), algorithms, 1:length(algorithms))...) :
-                            Dict(threadid()=>1)
+    tpool = map(alg -> alg.workertid, algorithms)
+    aindices = usethreads ? Dict(map((alg, aidx) -> (alg.workertid => aidx), algorithms, 1:length(algorithms))...) :
+        Dict(threadid() => 1)
     n = nimages(img)
     fs = FormatSpec("0$(ndigits(n))d")
 
@@ -67,12 +67,12 @@ function driver(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
 
     println("Working on algorithm and saving the result")
     jldopen(outfile, "w") do file
-        dsets = Dict{Symbol,Any}()
+        dsets = Dict{Symbol, Any}()
         firstsave = Ref(true)
         have_unpackable = Ref(false)
 
         # Channel for passing results from threads to writer
-        results_ch = Channel{Tuple{Int,Dict}}(32)
+        results_ch = Channel{Tuple{Int, Dict}}(32)
 
         # Writer task (runs on main thread)
         writer_task = @async begin
@@ -87,13 +87,13 @@ function driver(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
                 g = have_unpackable[] ? file[string("stack", fmt(fs, movidx))] : nothing
 
                 # Write all values into the file
-                for (k,v) in monres
+                for (k, v) in monres
                     if isa(v, Number)
                         dsets[k][movidx] = v
                     elseif isa(v, Array) || isa(v, SharedArray)
                         vw = nicehdf5(v)
                         if eltype(vw) <: BitsType
-                            colons = [Colon() for _=1:ndims(vw)]
+                            colons = [Colon() for _ in 1:ndims(vw)]
                             dsets[k][colons..., movidx] = vw
                         else
                             g[string(k)] = v
@@ -148,7 +148,7 @@ function driver(algorithm::AbstractWorker, img, mon::Dict)
     init!(algorithm)
     worker(algorithm, img, 1, mon)
     close!(algorithm)
-    mon
+    return mon
 end
 
 # Initialize the datasets in the output JLD file.
@@ -156,7 +156,7 @@ end
 # to get the sizes of any returned arrays.
 function initialize_jld!(dsets, file, mon, fs, n)
     have_unpackable = false
-    for (k,v) in mon
+    for (k, v) in mon
         kstr = string(k)
         if isa(v, Number)
             write(file, kstr, Vector{typeof(v)}(undef, n))
@@ -178,19 +178,19 @@ function initialize_jld!(dsets, file, mon, fs, n)
         end
     end
     if have_unpackable
-        for i = 1:n
+        for i in 1:n
             create_group(file, string("stack", fmt(fs, i)))
         end
     end
-    have_unpackable
+    return have_unpackable
 end
 
-function nicehdf5(v::Union{Array{T},SharedArray{T}}) where T<:StaticArray
-    nicehdf5(reshape(reinterpret(eltype(T), vec(sdata(v))), (size(eltype(v))..., size(v)...)))
+function nicehdf5(v::Union{Array{T}, SharedArray{T}}) where {T <: StaticArray}
+    return nicehdf5(reshape(reinterpret(eltype(T), vec(sdata(v))), (size(eltype(v))..., size(v)...)))
 end
 
-function nicehdf5(v::Union{Array{T},SharedArray{T}}) where T<:NumDenom
-    nicehdf5(reshape(reinterpret(eltype(T), vec(sdata(v))), (2, size(v)...)))
+function nicehdf5(v::Union{Array{T}, SharedArray{T}}) where {T <: NumDenom}
+    return nicehdf5(reshape(reinterpret(eltype(T), vec(sdata(v))), (2, size(v)...)))
 end
 
 nicehdf5(v::SharedArray) = sdata(v)
@@ -202,28 +202,28 @@ function copy_all_but_shared!(dest, src)
             dest[k] = v
         end
     end
-    dest
+    return dest
 end
 
-mm_package_loader(algorithms::Vector{W}) where {W<:AbstractWorker} = mm_package_loader(algorithms[1])
+mm_package_loader(algorithms::Vector{W}) where {W <: AbstractWorker} = mm_package_loader(algorithms[1])
 function mm_package_loader(algorithm::AbstractWorker)
     load_mm_package(algorithm.dev)
-    nothing
+    return nothing
 end
 
 function threadids()
     nt = nthreads()
-    ch = Channel{Int}(nt*1001)
+    ch = Channel{Int}(nt * 1001)
 
     @threads for i in 1:nt
         put!(ch, threadid())
     end
-    @sync for i in 1:(nt*1000)
+    @sync for i in 1:(nt * 1000)
         Threads.@spawn put!(ch, threadid())
     end
 
     close(ch)
     tids = unique(collect(ch))
-    sort(tids)
+    return sort(tids)
 end
 end # module
