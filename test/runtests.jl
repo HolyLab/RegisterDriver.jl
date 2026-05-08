@@ -1,4 +1,5 @@
 using Test, Distributed, SharedArrays
+using Aqua
 using ImageCore, JLD
 using RegisterDriver, RegisterWorkerShell
 using AxisArrays: AxisArray
@@ -6,6 +7,10 @@ using Base.Threads
 
 push!(LOAD_PATH, pwd())
 using WorkerDummy
+
+@testset "Aqua" begin
+    Aqua.test_all(RegisterDriver)
+end
 
 @testset "RegisterDriver" begin
     workdir = tempname()
