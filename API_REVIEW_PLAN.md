@@ -95,8 +95,8 @@
 - **Description**: Bump version from 1.0.0 → 1.0.1 per user's stated preference. Note: CHUNK-004 is technically a breaking change under semver (would normally warrant 2.0.0), but the author has deliberately chosen 1.0.1 given the small user base. Update `Project.toml` and CHANGELOG (if present).
 - **Depends on**: CHUNK-002, CHUNK-003, CHUNK-004, CHUNK-005
 - **Verification**: full test suite green; `Project.toml` shows 1.0.1
-- **Status**: `not-started`
-- **Notes**:
+- **Status**: `complete`
+- **Notes**: Bumped `Project.toml` `version` from `1.0.0` → `1.0.1`. No `CHANGELOG.md` exists; none created. Test suite identical to baseline (same pre-existing flake at `runtests.jl:88`; Doctests / Aqua / ExplicitImports green). Pkg.test report confirms `RegisterDriver v1.0.1`. NOTE for the user: `Project.toml` had pre-existing unstaged `[compat]` tightening in the working tree at session start (RegisterCore and RegisterWorkerShell narrowed from `"0.2, 1"` → `"1"`). Those edits are unrelated to CHUNK-006 but live in the same file. Decide before commit whether to bundle them with the version bump (sensible, since the package is already on 1.x) or split them out — `git restore --staged Project.toml` then re-stage selectively if you want them split.
 
 ## Dropped findings
 <!-- Items the user chose not to act on, with one-line reasons. -->
@@ -116,6 +116,8 @@
 > **Session 2026-05-14**: Completed CHUNK-002 (widen-vector-annotations). Widened `Vector` → `AbstractVector` on `driver` method 1 (line 64, both `algorithms` and `mon` params) and on `mm_package_loader` method 1 (line 238, removing the `{W<:AbstractWorker}` type parameter in favor of `AbstractVector{<:AbstractWorker}`). Updated docstrings to match. 0 new ambiguities; 9 pass / 1 pre-existing flake (unchanged). Next up: CHUNK-003 (widen-dict-annotations).
 
 > **Session 2026-05-14**: Completed CHUNK-003 (widen-dict-annotations). Changed `mon::Dict` → `mon::AbstractDict` on `driver` method 2 (line 151) and method 3 (line 171). Updated docstring. `annotation-widening` cluster now fully complete. 0 new ambiguities; 9 pass / 1 pre-existing flake (unchanged). Next up: CHUNK-004 (rename-mm-package-loader).
+
+> **Session 2026-05-14**: Completed CHUNK-006 (version-bump). Bumped `Project.toml` 1.0.0 → 1.0.1 per Stated values (deliberate patch bump despite CHUNK-004 being technically breaking). No CHANGELOG present, so none updated. Test suite matches baseline; `Pkg.test` confirms `RegisterDriver v1.0.1`. All chunks in the plan are now complete. Flagged for the user: `Project.toml` also carries pre-existing unstaged `[compat]` tightening on RegisterCore/RegisterWorkerShell from before this session — bundle or split before committing. Next up: none (terminal chunk; user performs Julia registry registration).
 
 > **Session 2026-05-14**: Completed CHUNK-005 (expose-parallel-keyword). Added `parallel::Bool = length(algorithms) > 2` keyword to `driver` method 1 and replaced the implicit `usethreads = nummon > 2` switch. Default preserves existing dispatch exactly. Added a 4-test "parallel keyword" testset; all four pass when invoked directly. Dropped the originally planned 1-worker `parallel=true` case after discovering it exposes a pre-existing limitation of `driver`'s thread-pinning logic (workers run only on threads matching `workertid`, so a single worker can never see all `@threads :dynamic` iterations). Recorded in Open Questions. `Pkg.test()` shows the same baseline result (9 pass / 1 pre-existing flake; later testsets short-circuited by the flake — also pre-existing). Next up: CHUNK-006 (version-bump 1.0.0 → 1.0.1).
 
