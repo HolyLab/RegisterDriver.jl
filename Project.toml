@@ -1,6 +1,6 @@
 name = "RegisterDriver"
 uuid = "935ac36e-2656-11e9-1e3b-cbaa636797af"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Tim Holy <tim.holy@gmail.com>"]
 
 [deps]
@@ -26,8 +26,8 @@ HDF5 = "0.12, 0.13, 0.14, 0.15, 0.16, 0.17"
 ImageCore = "0.8.1, 0.9, 0.10"
 ImageMetadata = "0.9"
 JLD = "0.9, 0.10, 0.11, 0.12, 0.13"
-RegisterCore = "0.2, 1"
-RegisterWorkerShell = "0.2, 1"
+RegisterCore = "1"
+RegisterWorkerShell = "1"
 SharedArrays = "1"
 StaticArrays = "0.11, 0.12, 1"
 Test = "1"

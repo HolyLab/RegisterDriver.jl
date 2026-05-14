@@ -1,61 +1,67 @@
 # Session Handoff — 2026-05-14
 
 ## Plan
-API_REVIEW_PLAN.md — RegisterDriver, v1.0.0
+API_REVIEW_PLAN.md — RegisterDriver, v1.0.0 → v1.0.1
 
 ## What was just completed
-CHUNK-005: expose-parallel-keyword
-Added `parallel::Bool = length(algorithms) > 2` keyword to `driver` method 1
-and renamed the local `usethreads` flag accordingly. The default exactly
-preserves the prior behaviour (`nummon == nalgs` makes
-`length(algorithms) > 2` equivalent to the old `nummon > 2`). Docstring
-updated. New "parallel keyword" testset (4 cases) covers sequential and
-threaded branches; all 4 pass when invoked directly.
+CHUNK-006: version-bump
+Bumped `Project.toml` from `1.0.0` → `1.0.1`. Per Stated values, the user
+deliberately chose a patch bump despite CHUNK-004 (`mm_package_loader` →
+`prepare_mm_package`) being technically breaking, on the grounds that the
+user base is small and internal. No `CHANGELOG.md` exists, so none was
+created.
 
 ## Key decisions / shim choices
-- Renamed the internal flag from `usethreads` to `parallel` so a single
-  source-of-truth name spans the keyword, the docstring, and the branch
-  predicate.
-- Dropped the originally planned "1 worker, `parallel=true`" test case.
-  `driver`'s threaded loop only runs work on threads matching `workertid`
-  (`if tid in tpool`). With one worker pinned to one tid, most iterations of
-  `@threads :dynamic` are no-ops and the output file ends up empty/partial.
-  Verified empirically (file `:λ` dataset missing). This is existing
-  behaviour, not introduced here. Logged as an Open Question.
+- Patch bump (1.0.0 → 1.0.1), not major. Recorded in Stated values from the
+  start of the plan; CHUNK-006's intent is a release of all chunks in this
+  plan as one terminal version.
 
 ## State of the codebase
 - Files modified:
-  - `src/RegisterDriver.jl` (lines ~62–76: docstring tail + signature +
-    rename `usethreads`→`parallel`; line ~120 branch rename)
-  - `test/runtests.jl` (new `@testset "parallel keyword"` after the
-    "In-memory single-image driver" testset)
-- Test suite: same as baseline — `Pkg.test()` reports 9 pass / 1 fail in the
-  RegisterDriver testset (the pre-existing flake at `runtests.jl:88`).
-  Doctests / Aqua / ExplicitImports all pass.
-- Direct (MCP) execution of the new "parallel keyword" testset: 4 / 4 pass.
-- Ambiguity count: 0 (no change from baseline)
-- Staged but uncommitted: yes — `src/RegisterDriver.jl`, `test/runtests.jl`,
-  plus plan/session updates.
+  - `Project.toml` — `version = "1.0.1"`
+  - `API_REVIEW_PLAN.md`, `API_REVIEW_SESSION.md` updated
+- Test suite: same as baseline — 9 pass / 1 pre-existing flake at
+  `runtests.jl:88`. Doctests / Aqua / ExplicitImports all pass.
+  `Pkg.test` reports `RegisterDriver v1.0.1`.
+- Ambiguity count: 0 (unchanged)
+- Staged but uncommitted: yes (see note below)
+
+## ⚠️ Pre-existing unstaged changes in Project.toml
+The working tree had unstaged `[compat]` tightening present at session
+start (carried in from before this conversation):
+
+    RegisterCore = "0.2, 1"        →  "1"
+    RegisterWorkerShell = "0.2, 1" →  "1"
+
+These are unrelated to CHUNK-006 but live in the same file. The version
+bump is staged alongside them. Decide before commit:
+
+- **Bundle**: commit Project.toml as-is. Sensible since the package is on
+  1.x and the dependencies' 0.2 lines are no longer realistic.
+- **Split**: `git restore --staged Project.toml`, then add only the
+  version line via `git add -p Project.toml`, and commit the compat
+  tightening separately (or before the bump).
 
 ## Cluster status
-- annotation-widening: 2 of 2 complete ✓
-- (CHUNK-005 has no cluster.)
+- annotation-widening: 2 of 2 ✓
+- All chunks complete ✓
 
 ## Next chunk
-CHUNK-006: version-bump — bump `Project.toml` from 1.0.0 → 1.0.1 (per
-Stated values; user has explicitly chosen a patch bump despite the
-CHUNK-004 rename being technically breaking). Update `CHANGELOG.md` if
-present. Then stop and let the user perform the registration.
+None — CHUNK-006 was terminal. After commit:
+
+1. Push to GitHub.
+2. Tag the merge commit and request registration via JuliaRegistrator
+   (`@JuliaRegistrator register` comment on the commit, or your usual
+   mechanism). The Julia registry is separate from git tags — registration
+   is its own action.
+3. TagBot will (if configured) cut the GitHub release once registration
+   merges.
 
 ## Watch out for
-- The pre-existing flake at `runtests.jl:88` short-circuits the test runner
-  before the In-memory / parallel keyword / nicehdf5 testsets emit Pkg.test
-  summaries. They DO pass when invoked directly. This is not a regression
-  from CHUNK-005 — same behaviour was reported in the baseline and CHUNK-004
-  notes. New Open Question added suggesting we consider relaxing/removing
-  the assertion soon.
-- New Open Question about `driver`'s thread-pinning gating being
-  fundamentally restrictive. Out of scope for this plan; consider as a
-  follow-up after release.
-- CHUNK-006 is the terminal chunk in this plan. Registration is a user
-  action, not something to perform here.
+- The pre-existing flake at `runtests.jl:88` continues to short-circuit
+  later testsets under `Pkg.test()`. Consider relaxing/removing soon (see
+  Open Questions in the plan). This release does not address it.
+- The `driver` thread-pinning gating (`if tid in tpool`) Open Question
+  remains — out of scope for v1.0.1 but worth a follow-up plan.
+- Once you've requested registration, do not re-run `/review-implement` on
+  this plan — every chunk is `complete`.
