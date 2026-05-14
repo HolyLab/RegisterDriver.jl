@@ -113,6 +113,46 @@ end
     @test_throws "With multiple images" driver(alg, multi_img, mon)
 end
 
+@testset "parallel keyword" begin
+    workdir = tempname()
+    mkdir(workdir)
+    img = AxisArray(SharedArray{Float32}((100, 100, 7)), :y, :x, :time)
+
+    # 1-worker, parallel=false (matches the default for nalgs<=2)
+    alg1 = Alg1(rand(3, 3), 3.2)
+    mon1 = monitor(alg1, (:λ,))
+    fn = joinpath(workdir, "p_seq1.jld")
+    driver(fn, [alg1], img, [mon1]; parallel = false)
+    @test JLD.load(fn, "λ") == Float64[1, 2, 3, 4, 5, 6, 7]
+    rm(fn)
+
+    # 3-worker, parallel=false (force sequential despite the >2 default would pick parallel)
+    tids = threadids()
+    nt = min(3, length(tids))
+    algs = [Alg1(rand(3, 3), 3.2; tid = tids[i]) for i in 1:nt]
+    mons = [monitor(algs[i], (:λ,)) for i in 1:nt]
+    fn = joinpath(workdir, "p_seq3.jld")
+    driver(fn, algs, img, mons; parallel = false)
+    @test JLD.load(fn, "λ") == Float64[1, 2, 3, 4, 5, 6, 7]
+    rm(fn)
+
+    # parallel=true with one worker per active thread (matches existing multi-thread test pattern)
+    algs2 = [Alg1(rand(3, 3), 3.2; tid = tids[i]) for i in 1:length(tids)]
+    mons2 = [monitor(algs2[i], (:λ,)) for i in 1:length(tids)]
+    fn = joinpath(workdir, "p_parN.jld")
+    driver(fn, algs2, img, mons2; parallel = true)
+    @test JLD.load(fn, "λ") == Float64[1, 2, 3, 4, 5, 6, 7]
+    rm(fn)
+
+    # default keyword: 1 worker → sequential (no threading branch)
+    alg3 = Alg1(rand(3, 3), 3.2)
+    mon3 = monitor(alg3, (:λ,))
+    fn = joinpath(workdir, "p_def1.jld")
+    driver(fn, [alg3], img, [mon3])
+    @test JLD.load(fn, "λ") == Float64[1, 2, 3, 4, 5, 6, 7]
+    rm(fn)
+end
+
 @testset "nicehdf5 specializations" begin
     # Plain SharedArray → sdata
     sa = SharedArray{Float32}((3, 4))

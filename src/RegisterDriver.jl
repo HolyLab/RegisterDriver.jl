@@ -59,16 +59,19 @@ and calling `monitor_copy!` inside the worker:
 monitor_copy!(mon, :extra, extra)   # saved only if :extra is a key in mon
 ```
 
+Pass `parallel=true` (or `false`) to force multi-threaded (or sequential)
+execution. By default, `parallel = length(algorithms) > 2`.
+
 Returns `nothing`.
 """
-function driver(outfile::AbstractString, algorithms::AbstractVector, img, mon::AbstractVector)
+function driver(outfile::AbstractString, algorithms::AbstractVector, img, mon::AbstractVector;
+                parallel::Bool = length(algorithms) > 2)
     nalgs = length(algorithms)
     nummon = length(mon)
     nummon == nalgs || error("Number of monitors must equal number of workers")
-    usethreads = nummon > 2
     numthreads = nthreads()
     tpool = map(alg -> alg.workertid, algorithms)
-    aindices = usethreads ? Dict(map((alg, aidx) -> (alg.workertid => aidx), algorithms, 1:length(algorithms))...) :
+    aindices = parallel ? Dict(map((alg, aidx) -> (alg.workertid => aidx), algorithms, 1:length(algorithms))...) :
         Dict(threadid() => 1)
     n = nimages(img)
     fs = FormatSpec("0$(ndigits(n))d")
@@ -117,7 +120,7 @@ function driver(outfile::AbstractString, algorithms::AbstractVector, img, mon::A
             end
         end
 
-        if usethreads
+        if parallel
             # writer_task shares the first thread, making static scheduling inefficient
             @threads :dynamic for movidx in 1:n
                 tid = threadid()
