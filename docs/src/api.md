@@ -9,6 +9,6 @@ driver
 ## Utilities
 
 ```@docs
-mm_package_loader
+prepare_mm_package
 threadids
 ```
