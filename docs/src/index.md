@@ -88,7 +88,7 @@ Some workers require a device-specific mismatch package (e.g. a CUDA backend)
 to be loaded on the driver process before registration starts:
 
 ```julia
-mm_package_loader(algorithm)
+prepare_mm_package(algorithm)
 driver("results.jld", algorithm, img, mon)
 ```
 

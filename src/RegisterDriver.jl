@@ -4,7 +4,7 @@
 Drive image registration workflows: run `AbstractWorker` algorithms over
 single- or multi-threaded execution and save results to disk.
 
-Primary entry point: [`driver`](@ref). See also [`mm_package_loader`](@ref)
+Primary entry point: [`driver`](@ref). See also [`prepare_mm_package`](@ref)
 and [`threadids`](@ref).
 """
 module RegisterDriver
@@ -24,7 +24,7 @@ using Base.Threads: @threads, nthreads, threadid
 
 const BitsType = HDF5.BitsType
 
-export driver, mm_package_loader, threadids
+export driver, prepare_mm_package, threadids
 
 """
     driver(outfile, algorithm, img, mon)
@@ -223,8 +223,8 @@ nicehdf5(v) = v
 
 
 """
-    mm_package_loader(algorithm::AbstractWorker)
-    mm_package_loader(algorithms::AbstractVector{<:AbstractWorker})
+    prepare_mm_package(algorithm::AbstractWorker)
+    prepare_mm_package(algorithms::AbstractVector{<:AbstractWorker})
 
 Load the mismatch-computation package appropriate for `algorithm`'s compute device.
 
@@ -235,8 +235,8 @@ CUDA mismatch package) to be loaded on the driver process.
 
 Returns `nothing`.
 """
-mm_package_loader(algorithms::AbstractVector{<:AbstractWorker}) = mm_package_loader(algorithms[1])
-function mm_package_loader(algorithm::AbstractWorker)
+prepare_mm_package(algorithms::AbstractVector{<:AbstractWorker}) = prepare_mm_package(algorithms[1])
+function prepare_mm_package(algorithm::AbstractWorker)
     load_mm_package(algorithm.dev)
     return nothing
 end
