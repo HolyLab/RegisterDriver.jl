@@ -32,12 +32,12 @@ export driver, mm_package_loader, threadids
 
 Register the image(s) in `img` and save results to `outfile` in JLD format.
 
-`algorithm` is a single `AbstractWorker` instance; `algorithms` is a `Vector`
+`algorithm` is a single `AbstractWorker` instance; `algorithms` is an `AbstractVector`
 of such instances for parallel (multi-threaded) computation. See the
 `RegisterWorkerShell` module for details on constructing workers.
 
-`mon` is a `Dict` mapping `Symbol` keys to communication values, or for the
-parallel form a `Vector` of such `Dict`s (one per worker). The keys specify
+`mon` is an `AbstractDict` mapping `Symbol` keys to communication values, or for the
+parallel form an `AbstractVector` of such `AbstractDict`s (one per worker). The keys specify
 which computed quantities are communicated back from each worker. Set them up
 with the worker's `monitor` function:
 
@@ -61,7 +61,7 @@ monitor_copy!(mon, :extra, extra)   # saved only if :extra is a key in mon
 
 Returns `nothing`.
 """
-function driver(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
+function driver(outfile::AbstractString, algorithms::AbstractVector, img, mon::AbstractVector)
     nalgs = length(algorithms)
     nummon = length(mon)
     nummon == nalgs || error("Number of monitors must equal number of workers")
@@ -148,7 +148,7 @@ function driver(outfile::AbstractString, algorithms::Vector, img, mon::Vector)
     return nothing
 end
 
-driver(outfile::AbstractString, algorithm::AbstractWorker, img, mon::Dict) = driver(outfile, [algorithm], img, [mon])
+driver(outfile::AbstractString, algorithm::AbstractWorker, img, mon::AbstractDict) = driver(outfile, [algorithm], img, [mon])
 
 """
     driver(algorithm, img, mon) -> Dict
@@ -168,7 +168,7 @@ mon = driver(algorithm, img, mon)
 tform = mon[:tform]
 ```
 """
-function driver(algorithm::AbstractWorker, img, mon::Dict)
+function driver(algorithm::AbstractWorker, img, mon::AbstractDict)
     nimages(img) == 1 || error("With multiple images, you must store results to a file")
     init!(algorithm)
     worker(algorithm, img, 1, mon)
@@ -224,7 +224,7 @@ nicehdf5(v) = v
 
 """
     mm_package_loader(algorithm::AbstractWorker)
-    mm_package_loader(algorithms::Vector{<:AbstractWorker})
+    mm_package_loader(algorithms::AbstractVector{<:AbstractWorker})
 
 Load the mismatch-computation package appropriate for `algorithm`'s compute device.
 
@@ -235,7 +235,7 @@ CUDA mismatch package) to be loaded on the driver process.
 
 Returns `nothing`.
 """
-mm_package_loader(algorithms::Vector{W}) where {W <: AbstractWorker} = mm_package_loader(algorithms[1])
+mm_package_loader(algorithms::AbstractVector{<:AbstractWorker}) = mm_package_loader(algorithms[1])
 function mm_package_loader(algorithm::AbstractWorker)
     load_mm_package(algorithm.dev)
     return nothing
