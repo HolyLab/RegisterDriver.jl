@@ -17,7 +17,7 @@ using ImageMetadata: ImageMetadata
 using JLD: JLD, jldopen
 using RegisterCore: RegisterCore, NumDenom
 using RegisterWorkerShell: RegisterWorkerShell, AbstractWorker, ArrayDecl,
-                           close!, init!, load_mm_package, worker
+                           close!, init!, load_mm_package, worker, workertid
 using SharedArrays: SharedArrays, SharedArray, sdata
 using StaticArrays: StaticArrays, StaticArray
 using Base.Threads: @threads, nthreads, threadid
@@ -70,8 +70,8 @@ function driver(outfile::AbstractString, algorithms::AbstractVector, img, mon::A
     nummon = length(mon)
     nummon == nalgs || error("Number of monitors must equal number of workers")
     numthreads = nthreads()
-    tpool = map(alg -> alg.workertid, algorithms)
-    aindices = parallel ? Dict(map((alg, aidx) -> (alg.workertid => aidx), algorithms, 1:length(algorithms))...) :
+    tpool = map(workertid, algorithms)
+    aindices = parallel ? Dict(map((alg, aidx) -> (workertid(alg) => aidx), algorithms, 1:length(algorithms))...) :
         Dict(threadid() => 1)
     n = nimages(img)
     fs = FormatSpec("0$(ndigits(n))d")
