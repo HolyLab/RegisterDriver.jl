@@ -4,7 +4,7 @@ module WorkerDummy
 using RegisterWorkerShell, Distributed
 import RegisterWorkerShell: worker
 
-export Alg1, Alg2, Alg3, Alg4
+export Alg1, Alg2, Alg3, Alg4, AlgExclusive
 
 # Dispatch on the algorithm used to perform registration
 # Each algorithm has a container it uses for storage and communication
@@ -74,6 +74,31 @@ end
 function worker(algorithm::Alg4, moving, tindex, mon)
     mon[:data] = algorithm.data .* tindex
     mon[:label] = algorithm.label * string(tindex)
+    return mon
+end
+
+# AlgExclusive: detects a worker being used by two registrations at once.
+# `driver` must never hand one worker to concurrently-running tasks, because a
+# worker's fields and its monitor dict are mutated in place.
+mutable struct AlgExclusive <: Alg
+    busy::Bool          # set for the duration of a call, checked on entry
+    reentered::Bool     # sticky: a second entry was seen while busy
+    ncalls::Int
+    workertid::Int
+end
+AlgExclusive(; tid = 1) = AlgExclusive(false, false, 0, tid)
+
+function worker(algorithm::AlgExclusive, moving, tindex, mon)
+    algorithm.busy && (algorithm.reentered = true)
+    algorithm.busy = true
+    algorithm.ncalls += 1
+    # Yield points are what let two tasks interleave on one thread; a real
+    # worker reaches them through I/O, FFT planning and the like.
+    for _ in 1:20
+        yield()
+    end
+    monitor!(mon, :tindex, tindex)
+    algorithm.busy = false
     return mon
 end
 

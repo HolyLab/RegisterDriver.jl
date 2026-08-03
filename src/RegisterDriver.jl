@@ -17,7 +17,7 @@ using ImageMetadata: ImageMetadata
 using JLD: JLD, jldopen
 using RegisterCore: RegisterCore, NumDenom
 using RegisterWorkerShell: RegisterWorkerShell, AbstractWorker, ArrayDecl,
-                           close!, init!, load_mm_package, worker, workertid
+                           close!, init!, load_mm_package, worker
 using SharedArrays: SharedArrays, SharedArray, sdata
 using StaticArrays: StaticArrays, StaticArray
 using Base.Threads: @threads, nthreads, threadid
@@ -69,10 +69,6 @@ function driver(outfile::AbstractString, algorithms::AbstractVector, img, mon::A
     nalgs = length(algorithms)
     nummon = length(mon)
     nummon == nalgs || error("Number of monitors must equal number of workers")
-    numthreads = nthreads()
-    tpool = map(workertid, algorithms)
-    aindices = parallel ? Dict(map((alg, aidx) -> (workertid(alg) => aidx), algorithms, 1:length(algorithms))...) :
-        Dict(threadid() => 1)
     n = nimages(img)
     fs = FormatSpec("0$(ndigits(n))d")
 
@@ -121,15 +117,24 @@ function driver(outfile::AbstractString, algorithms::AbstractVector, img, mon::A
         end
 
         if parallel
-            # writer_task shares the first thread, making static scheduling inefficient
-            @threads :dynamic for movidx in 1:n
-                tid = threadid()
-                if tid in tpool
-                    println("thread $tid processing $movidx")
-                    tmp = worker(algorithms[aindices[tid]], img, movidx, mon[aindices[tid]])
+            # One task per worker, each taking the next unclaimed image. A worker
+            # must not be chosen by `threadid()`: tasks spawned per image can
+            # interleave on a thread at any yield point, so two running
+            # concurrently may observe the same id and would then share one
+            # worker — and one monitor dict — corrupting both registrations.
+            # Owning a worker for the task's whole life makes that impossible
+            # without any locking.
+            nextidx = Threads.Atomic{Int}(1)
+            @sync for k in eachindex(algorithms, mon)
+                Threads.@spawn while true
+                    movidx = Threads.atomic_add!(nextidx, 1)
+                    movidx > n && break
+                    println("worker $k processing $movidx")
+                    # `mon[k]` is reused for every image this worker handles, so
+                    # the writer needs a snapshot rather than a live reference.
+                    tmp = worker(algorithms[k], img, movidx, mon[k])
                     put!(results_ch, (movidx, deepcopy(tmp)))
                 end
-                yield()
             end
         else
             for movidx in 1:n
@@ -250,9 +255,11 @@ end
 Return the sorted list of thread IDs that Julia's scheduler actually assigns to
 tasks spawned with `@threads` and `Threads.@spawn`.
 
-Julia's main thread (ID 1) typically does not execute worker tasks. The
-returned IDs are useful for configuring `AbstractWorker` instances that pin
-execution to a specific thread via the `workertid` field.
+Julia's main thread (ID 1) typically does not execute worker tasks.
+
+[`driver`](@ref) does not need this: it gives each worker its own task and
+distributes images between them, so `algorithms` may have any length and a
+worker's `workertid` does not affect which images it receives.
 
 # Example
 
