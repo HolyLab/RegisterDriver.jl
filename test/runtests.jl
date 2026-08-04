@@ -197,6 +197,26 @@ end
     rm(fn)
 end
 
+@testset "every worker is initialized and closed" begin
+    # A worker registers images only after `init!` has set up its resources, so
+    # each element of `algorithms` needs its own `init!` and matching `close!`.
+    workdir = tempname()
+    mkdir(workdir)
+    n = 16
+    img = AxisArray(SharedArray{Float32}((16, 16, n)), :y, :x, :time)
+
+    algs = [AlgLifecycle(; tid = i) for i in 1:4]
+    mons = [Dict{Symbol,Any}(:tindex => 0) for _ in 1:4]
+    fn = joinpath(workdir, "lifecycle.jld")
+    driver(fn, algs, img, mons; parallel = true)
+
+    @test all(a -> a.ninit == 1, algs)
+    @test all(a -> a.nclose == 1, algs)
+    @test !any(a -> a.uninitialized, algs)
+    @test sum(a -> a.ncalls, algs) == n
+    rm(fn)
+end
+
 @testset "nicehdf5 specializations" begin
     # Plain SharedArray → sdata
     sa = SharedArray{Float32}((3, 4))

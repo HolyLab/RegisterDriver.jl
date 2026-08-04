@@ -2,9 +2,9 @@
 module WorkerDummy
 
 using RegisterWorkerShell, Distributed
-import RegisterWorkerShell: worker
+import RegisterWorkerShell: worker, init!, close!
 
-export Alg1, Alg2, Alg3, Alg4, AlgExclusive
+export Alg1, Alg2, Alg3, Alg4, AlgExclusive, AlgLifecycle
 
 # Dispatch on the algorithm used to perform registration
 # Each algorithm has a container it uses for storage and communication
@@ -99,6 +99,28 @@ function worker(algorithm::AlgExclusive, moving, tindex, mon)
     end
     monitor!(mon, :tindex, tindex)
     algorithm.busy = false
+    return mon
+end
+
+# AlgLifecycle: records its own `init!`/`close!` calls. A worker that registers
+# images must have been initialized first, so `driver` owes every element of
+# `algorithms` an `init!` and a matching `close!`.
+mutable struct AlgLifecycle <: Alg
+    ninit::Int
+    nclose::Int
+    ncalls::Int
+    uninitialized::Bool   # sticky: an image arrived before `init!`
+    workertid::Int
+end
+AlgLifecycle(; tid = 1) = AlgLifecycle(0, 0, 0, false, tid)
+
+init!(algorithm::AlgLifecycle) = (algorithm.ninit += 1; nothing)
+close!(algorithm::AlgLifecycle) = (algorithm.nclose += 1; nothing)
+
+function worker(algorithm::AlgLifecycle, moving, tindex, mon)
+    algorithm.ninit == 0 && (algorithm.uninitialized = true)
+    algorithm.ncalls += 1
+    monitor!(mon, :tindex, tindex)
     return mon
 end
 

@@ -72,8 +72,11 @@ function driver(outfile::AbstractString, algorithms::AbstractVector, img, mon::A
     n = nimages(img)
     fs = FormatSpec("0$(ndigits(n))d")
 
-    println("Initializing algorithm")
-    init!(algorithms[1])
+    println("Initializing algorithms")
+    # Every worker is initialized, not just the first: `init!` sets up per-worker
+    # resources (device contexts, scratch buffers), and every worker registers
+    # images of its own.
+    foreach(init!, algorithms)
 
     println("Working on algorithm and saving the result")
     jldopen(outfile, "w") do file
@@ -150,8 +153,8 @@ function driver(outfile::AbstractString, algorithms::AbstractVector, img, mon::A
         wait(writer_task)
     end
 
-    println("Closing algorithm")
-    close!(algorithms[1])
+    println("Closing algorithms")
+    foreach(close!, algorithms)
 
     return nothing
 end
