@@ -83,9 +83,12 @@ end
     u0 = JLD.load(fn, "u0")
     @test tform[:, 4] == collect(range(1, stop = 12, length = 12) .+ 4)
     @test u0[:, :, 2] == fill(-2, (3, 3))
+    # Images are distributed between the workers, so which worker takes which
+    # image is not fixed. What must hold is that every image was registered,
+    # each by one of the workers supplied.
     tid = JLD.load(fn, "workertid")
-    indx = unique(indexin(tid, tids))
-    @test length(indx) == length(tids) && all(indx .> 0)
+    @test length(tid) == size(img, 3)
+    @test all(in(tids), tid)
     rm(fn)
 
     # Non-BitsType array (ComplexF32) alongside an unpackable string: exercises
@@ -150,6 +153,67 @@ end
     fn = joinpath(workdir, "p_def1.jld")
     driver(fn, [alg3], img, [mon3])
     @test JLD.load(fn, "λ") == Float64[1, 2, 3, 4, 5, 6, 7]
+    rm(fn)
+end
+
+@testset "workers are used exclusively" begin
+    # A worker's fields and monitor dict are mutated in place, so `driver` must
+    # never hand one to two concurrently-running tasks. Selecting the worker by
+    # `threadid()` did: tasks spawned per image interleave on a thread at any
+    # yield point, so two running at once could observe the same id.
+    workdir = tempname()
+    mkdir(workdir)
+    n = 64
+    img = AxisArray(SharedArray{Float32}((16, 16, n)), :y, :x, :time)
+
+    tids = threadids()
+    algs = [AlgExclusive(; tid = t) for t in tids]
+    mons = [Dict{Symbol,Any}(:tindex => 0) for _ in eachindex(tids)]
+    fn = joinpath(workdir, "exclusive.jld")
+    driver(fn, algs, img, mons; parallel = true)
+
+    @test !any(a -> a.reentered, algs)
+    @test sum(a -> a.ncalls, algs) == n
+    @test JLD.load(fn, "tindex") == 1:n
+    rm(fn)
+end
+
+@testset "images are distributed independently of workertid" begin
+    # A worker's `workertid` must not decide which images reach it. Dispatching
+    # on `threadid()` dropped, without any error, every image whose task ran on
+    # a thread outside the set of worker ids.
+    workdir = tempname()
+    mkdir(workdir)
+    n = 64
+    img = AxisArray(SharedArray{Float32}((16, 16, n)), :y, :x, :time)
+
+    algs = [AlgExclusive(; tid = 1000 + i) for i in 1:4]   # ids matching no thread
+    mons = [Dict{Symbol,Any}(:tindex => 0) for _ in 1:4]
+    fn = joinpath(workdir, "anytid.jld")
+    driver(fn, algs, img, mons; parallel = true)
+
+    @test sum(a -> a.ncalls, algs) == n
+    @test JLD.load(fn, "tindex") == 1:n
+    rm(fn)
+end
+
+@testset "every worker is initialized and closed" begin
+    # A worker registers images only after `init!` has set up its resources, so
+    # each element of `algorithms` needs its own `init!` and matching `close!`.
+    workdir = tempname()
+    mkdir(workdir)
+    n = 16
+    img = AxisArray(SharedArray{Float32}((16, 16, n)), :y, :x, :time)
+
+    algs = [AlgLifecycle(; tid = i) for i in 1:4]
+    mons = [Dict{Symbol,Any}(:tindex => 0) for _ in 1:4]
+    fn = joinpath(workdir, "lifecycle.jld")
+    driver(fn, algs, img, mons; parallel = true)
+
+    @test all(a -> a.ninit == 1, algs)
+    @test all(a -> a.nclose == 1, algs)
+    @test !any(a -> a.uninitialized, algs)
+    @test sum(a -> a.ncalls, algs) == n
     rm(fn)
 end
 
